@@ -101,6 +101,14 @@ def k_components(G, min_density=0.95):
     """
     pass
 
+def single_edge_dict():
+    """Returns a dict with a single edge attribute.
+
+    This function is used as the edge_attr_dict_factory for the _AntiGraph class.
+    It returns a dict with a single edge attribute 'weight' with value 1.
+    """
+    return {'weight': 1}
+
 class _AntiGraph(nx.Graph):
     """
     Class for complement graphs.
@@ -138,7 +146,7 @@ class _AntiGraph(nx.Graph):
         """Returns an iterator over all neighbors of node n in the
         dense graph.
         """
-        pass
+        return iter(set(self._adj) - set(self._adj[n]) - {n})
 
     class AntiAtlasView(Mapping):
         """An adjacency inner dict for AntiGraph"""
