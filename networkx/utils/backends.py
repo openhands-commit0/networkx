@@ -226,7 +226,40 @@ def _get_backends(group, *, load_and_call=False):
     The `nx-loopback` backend is removed if it exists, as it is only available during testing.
     A warning is displayed if an error occurs while loading a backend.
     """
-    pass
+    # Get all entry points for the specified group
+    eps = entry_points()
+    if group not in eps.groups:
+        return {}
+
+    # Dictionary to store backends
+    result = {}
+
+    # Process each entry point
+    for ep in eps.select(group=group):
+        try:
+            # Load the entry point
+            backend = ep.load()
+            if load_and_call:
+                backend = backend()
+
+            # Check for duplicate backends
+            if ep.name in result:
+                warnings.warn(
+                    f"Backend {ep.name} is defined more than once. "
+                    f"Using {ep.value} instead of {result[ep.name]}"
+                )
+
+            # Store the backend
+            result[ep.name] = backend
+
+        except Exception as e:
+            warnings.warn(f"Error loading backend {ep.name}: {str(e)}")
+
+    # Remove loopback backend if not testing
+    if not _dispatchable._is_testing and 'nx-loopback' in result:
+        del result['nx-loopback']
+
+    return result
 backends = _get_backends('networkx.backends')
 backend_info = _get_backends('networkx.backend_info', load_and_call=True)
 from .configs import Config, config
