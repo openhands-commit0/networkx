@@ -359,7 +359,7 @@ class DiGraph(Graph):
 
         For directed graphs, `G.adj` holds outgoing (successor) info.
         """
-        pass
+        return AdjacencyView(self._adj)
 
     @cached_property
     def succ(self):
@@ -380,7 +380,7 @@ class DiGraph(Graph):
 
         For directed graphs, `G.adj` is identical to `G.succ`.
         """
-        pass
+        return AdjacencyView(self._succ)
 
     @cached_property
     def pred(self):
@@ -396,7 +396,7 @@ class DiGraph(Graph):
         by dicts also exists: `for nbr, foovalue in G.pred[node].data('foo'):`
         A default can be set via a `default` argument to the `data` method.
         """
-        pass
+        return AdjacencyView(self._pred)
 
     def add_node(self, node_for_adding, **attr):
         """Add a single node `node_for_adding` and update node attributes.
