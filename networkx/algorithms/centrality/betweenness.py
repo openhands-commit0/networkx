@@ -8,8 +8,6 @@ from networkx.utils import py_random_state
 from networkx.utils.decorators import not_implemented_for
 __all__ = ['betweenness_centrality', 'edge_betweenness_centrality']
 
-@py_random_state(5)
-@nx._dispatchable(edge_attrs='weight')
 def _single_source_shortest_path_basic(G, s):
     """Compute shortest path lengths and predecessors on paths from source.
 
