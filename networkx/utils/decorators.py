@@ -1195,17 +1195,53 @@ class argmap:
         """
         pass
 
-def deprecate_positional_args(func=None, *, version):
-    """Decorator for methods that issues warnings for positional arguments.
+def deprecate_positional_args(*, version=None):
+    """Decorator to enforce keyword-only arguments.
 
-    Using the keyword-only argument syntax in pep 3102, arguments after the
-    * will issue a warning when passed as a positional argument.
+    Using this decorator on a function will raise a TypeError if positional arguments
+    are used instead of keyword arguments for any parameter after the first one.
 
     Parameters
     ----------
-    func : callable, default=None
-        Function to check arguments on.
-    version : callable, default="1.3"
-        The version when positional arguments will result in error.
+    version : str, optional
+        The version in which positional arguments will be fully deprecated.
+        If None, positional arguments are deprecated immediately.
+
+    Returns
+    -------
+    _deprecate_positional_args : function
+        Function that enforces keyword-only arguments.
+
+    Examples
+    --------
+    >>> @deprecate_positional_args(version='3.4')
+    ... def add(a, b=2, c=3):
+    ...     return a + b + c
+    >>> add(1, b=2, c=3)  # OK
+    6
+    >>> add(1, 2, c=3)  # Raises TypeError
+    Traceback (most recent call last):
+        ...
+    TypeError: After the first argument, only keyword arguments are allowed.
     """
-    pass
+    def _deprecate_positional_args(func):
+        sig = signature(func)
+        first_param = next(iter(sig.parameters.values()))
+        has_var_args = any(p.kind == Parameter.VAR_POSITIONAL for p in sig.parameters.values())
+
+        @wraps(func)
+        def inner(*args, **kwargs):
+            if len(args) > 1 and not has_var_args:
+                warnings.warn(
+                    f"After the first argument, only keyword arguments are allowed. "
+                    f"Using positional arguments will be deprecated in version {version}.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                if version is None:
+                    raise TypeError("After the first argument, only keyword arguments are allowed.")
+            return func(*args, **kwargs)
+
+        return inner
+
+    return _deprecate_positional_args
