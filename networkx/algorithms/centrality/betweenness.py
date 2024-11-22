@@ -10,6 +10,97 @@ __all__ = ['betweenness_centrality', 'edge_betweenness_centrality']
 
 @py_random_state(5)
 @nx._dispatchable(edge_attrs='weight')
+def _single_source_shortest_path_basic(G, s):
+    """Compute shortest path lengths and predecessors on paths from source.
+
+    Parameters
+    ----------
+    G : NetworkX graph
+
+    s : node
+       Source node for path
+
+    Returns
+    -------
+    pred : dict
+        Dictionary of predecessors keyed by vertex
+    sigma : dict
+        Dictionary of path counts keyed by vertex
+    D : dict
+        Dictionary of shortest path lengths keyed by vertex
+    """
+    pred = {s: []}  # dictionary of predecessors
+    sigma = {s: 1.0}  # sigma[v]=0 for v not in G
+    D = {}
+    D[s] = 0
+    Q = deque([s])
+    while Q:  # use BFS to find shortest paths
+        v = Q.popleft()
+        for w in G[v]:  # for each neighbor of v
+            if w not in D:  # if w not already seen
+                Q.append(w)
+                D[w] = D[v] + 1  # shortest path length to w
+                sigma[w] = 0.0  # initialize path count
+                pred[w] = [v]  # v is the only predecessor
+            elif D[w] == D[v] + 1:  # if edge is on a shortest path
+                sigma[w] += sigma[v]  # add the path count
+                pred[w].append(v)  # v is another predecessor
+    return pred, sigma, D
+
+def _single_source_dijkstra_path_basic(G, s, weight=None):
+    """Compute shortest path lengths and predecessors on paths from source.
+
+    Parameters
+    ----------
+    G : NetworkX graph
+
+    s : node
+       Source node for path
+
+    weight : string or function
+       If it is a string, it is the name of the edge attribute to be
+       used as a weight.
+       If it is a function, the weight of an edge is the value
+       returned by the function. The function must accept exactly three
+       positional arguments: the two endpoints of an edge and the
+       dictionary of edge attributes for that edge. The function must
+       return a number.
+
+    Returns
+    -------
+    pred : dict
+        Dictionary of predecessors keyed by vertex
+    sigma : dict
+        Dictionary of path counts keyed by vertex
+    D : dict
+        Dictionary of shortest path lengths keyed by vertex
+    """
+    weight_fn = _weight_function(G, weight)
+    pred = {s: []}  # dictionary of predecessors
+    sigma = {s: 1.0}  # sigma[v]=0 for v not in G
+    D = {}
+    D[s] = 0
+    seen = {s: 0}
+    Q = []  # use Q as heap with (distance, node id) tuples
+    heappush(Q, (0, s, s))
+    while Q:
+        (dist, pred_node, v) = heappop(Q)
+        if v in D:
+            continue  # already searched this node.
+        sigma[v] = sigma[pred_node]  # count paths
+        D[v] = dist
+        for w, edgedata in G[v].items():
+            vw_dist = dist + weight_fn(v, w, edgedata)
+            if w not in D and (w not in seen or vw_dist < seen[w]):
+                seen[w] = vw_dist
+                heappush(Q, (vw_dist, v, w))
+                sigma[w] = 0.0
+                pred[w] = [v]
+            elif vw_dist == seen[w]:  # handle equal paths
+                sigma[w] += sigma[v]
+                pred[w].append(v)
+    return pred, sigma, D
+
 def betweenness_centrality(G, k=None, normalized=True, weight=None, endpoints=False, seed=None):
     """Compute the shortest-path betweenness centrality for nodes.
 
