@@ -867,8 +867,70 @@ class DiGraph(Graph):
         OutEdgeDataView([(0, 1)])
 
         """
-        pass
-    out_edges.__doc__ = edges.__doc__
+        return OutEdgeView(self)
+
+    @cached_property
+    def out_edges(self):
+        """An OutEdgeView of the DiGraph as G.out_edges or G.out_edges().
+
+        out_edges(self, nbunch=None, data=False, default=None)
+
+        The OutEdgeView provides set-like operations on the edge-tuples
+        as well as edge attribute lookup. When called, it also provides
+        an EdgeDataView object which allows control of access to edge
+        attributes (but does not provide set-like operations).
+        Hence, `G.edges[u, v]['color']` provides the value of the color
+        attribute for edge `(u, v)` while
+        `for (u, v, c) in G.edges.data('color', default='red'):`
+        iterates through all the edges yielding the color attribute
+        with default `'red'` if no color attribute exists.
+
+        Parameters
+        ----------
+        nbunch : single node, container, or all nodes (default= all nodes)
+            The view will only report edges from these nodes.
+        data : string or bool, optional (default=False)
+            The edge attribute returned in 3-tuple (u, v, ddict[data]).
+            If True, return edge attribute dict in 3-tuple (u, v, ddict).
+            If False, return 2-tuple (u, v).
+        default : value, optional (default=None)
+            Value used for edges that don't have the requested attribute.
+            Only relevant if data is not True or False.
+
+        Returns
+        -------
+        edges : OutEdgeView
+            A view of edge attributes, usually it iterates over (u, v)
+            or (u, v, d) tuples of edges, but can also be used for
+            attribute lookup as `edges[u, v]['foo']`.
+
+        See Also
+        --------
+        in_edges
+
+        Notes
+        -----
+        Nodes in nbunch that are not in the graph will be (quietly) ignored.
+        For directed graphs this returns the out-edges.
+
+        Examples
+        --------
+        >>> G = nx.DiGraph()  # or MultiDiGraph, etc
+        >>> nx.add_path(G, [0, 1, 2])
+        >>> G.add_edge(2, 3, weight=5)
+        >>> [e for e in G.out_edges]
+        [(0, 1), (1, 2), (2, 3)]
+        >>> G.out_edges.data()  # default data is {} (empty dict)
+        OutEdgeDataView([(0, 1, {}), (1, 2, {}), (2, 3, {'weight': 5})])
+        >>> G.out_edges.data("weight", default=1)
+        OutEdgeDataView([(0, 1, 1), (1, 2, 1), (2, 3, 5)])
+        >>> G.out_edges([0, 2])  # only edges originating from these nodes
+        OutEdgeDataView([(0, 1), (2, 3)])
+        >>> G.out_edges(0)  # only edges from node 0
+        OutEdgeDataView([(0, 1)])
+
+        """
+        return OutEdgeView(self)
 
     @cached_property
     def in_edges(self):
