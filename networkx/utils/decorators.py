@@ -59,7 +59,29 @@ def not_implemented_for(*graph_types):
        def sp_np_function(G):
            pass
     """
-    pass
+    def _not_implemented_for(func):
+        @wraps(func)
+        def _not_implemented_for_func(*args, **kwargs):
+            graph = args[0]
+            terms = {
+                "directed": graph.is_directed(),
+                "undirected": not graph.is_directed(),
+                "multigraph": graph.is_multigraph(),
+                "graph": not graph.is_multigraph(),
+            }
+            match = True
+            try:
+                for t in graph_types:
+                    if terms[t]:
+                        match = False
+            except KeyError as e:
+                raise KeyError(f"use one of {', '.join(terms)}") from e
+            if match:
+                return func(*args, **kwargs)
+            msg = f"{func.__name__} not implemented for {' '.join(graph_types)} type"
+            raise nx.NetworkXNotImplemented(msg)
+        return _not_implemented_for_func
+    return _not_implemented_for
 fopeners = {'.gz': gzip.open, '.gzip': gzip.open, '.bz2': bz2.BZ2File}
 _dispatch_dict = defaultdict(lambda: open, **fopeners)
 
@@ -138,7 +160,71 @@ def open_file(path_arg, mode='r'):
     Instead, we use a try block, as shown above.
     When we exit the function, fobj will be closed, if it should be, by the decorator.
     """
-    pass
+    def _open_file(func):
+        def _file_opener(*args, **kwargs):
+            # Get the path argument
+            if isinstance(path_arg, int):
+                # path_arg is a position argument
+                if path_arg >= len(args):
+                    # If the path_arg index is greater than the number of arguments,
+                    # try to find the argument in the kwargs using its name
+                    sig = signature(func)
+                    param_names = list(sig.parameters.keys())
+                    if path_arg < len(param_names):
+                        path = kwargs.get(param_names[path_arg], None)
+                    else:
+                        raise ValueError(f"path argument at index {path_arg} not found")
+                else:
+                    path = args[path_arg]
+            else:
+                # path_arg is a keyword argument
+                path = kwargs.get(path_arg, None)
+
+            # Return quickly if no path argument was found or it's None
+            if path is None:
+                return func(*args, **kwargs)
+
+            # If the path argument is already a file object, just pass it through
+            if hasattr(path, 'write') and hasattr(path, 'read'):
+                return func(*args, **kwargs)
+
+            # Convert path to Path object to handle both string and Path inputs
+            if isinstance(path, str):
+                path = Path(path)
+
+            # Get the file extension and corresponding opener
+            ext = path.suffix.lower()
+            fopen = _dispatch_dict[ext]
+
+            # Open the file with the appropriate opener
+            try:
+                fobj = fopen(path, mode=mode)
+            except Exception as e:
+                raise ValueError(f"Failed to open file {path}: {str(e)}")
+
+            # Replace the path argument with the file object
+            if isinstance(path_arg, int):
+                # Convert args to list for modification
+                args = list(args)
+                if path_arg < len(args):
+                    args[path_arg] = fobj
+                else:
+                    kwargs[list(signature(func).parameters.keys())[path_arg]] = fobj
+                args = tuple(args)
+            else:
+                kwargs[path_arg] = fobj
+
+            # Call the function and ensure the file is closed afterward
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                fobj.close()
+
+            return result
+
+        return _file_opener
+
+    return _open_file
 
 def nodes_or_number(which_args):
     """Decorator to allow number of nodes or container of nodes.
@@ -185,7 +271,53 @@ def nodes_or_number(which_args):
            # presumably r is a number. It is not handled by this decorator.
            # n is converted to a list of nodes
     """
-    pass
+    def _nodes_or_number(func):
+        # If which_args is not a list, make it a list
+        arglist = which_args if isinstance(which_args, (list, tuple)) else [which_args]
+
+        @wraps(func)
+        def _nodes_or_numbers_func(*args, **kwargs):
+            # Get the names of the arguments
+            sig = signature(func)
+            param_names = list(sig.parameters.keys())
+
+            # Convert args to a list for modification
+            args = list(args)
+
+            # Process each argument that needs conversion
+            for arg_loc in arglist:
+                if isinstance(arg_loc, int):
+                    # If arg_loc is an integer, it's an index into args
+                    if arg_loc < len(args):
+                        if isinstance(args[arg_loc], int):
+                            args[arg_loc] = range(args[arg_loc])
+                    else:
+                        # If the argument is not in args, it might be in kwargs
+                        # Find the name of the argument at this position
+                        if arg_loc < len(param_names):
+                            arg_name = param_names[arg_loc]
+                            if arg_name in kwargs and isinstance(kwargs[arg_name], int):
+                                kwargs[arg_name] = range(kwargs[arg_name])
+                elif isinstance(arg_loc, str):
+                    # If arg_loc is a string, it's the name of a kwarg
+                    if arg_loc in kwargs:
+                        if isinstance(kwargs[arg_loc], int):
+                            kwargs[arg_loc] = range(kwargs[arg_loc])
+                    else:
+                        # If not in kwargs, check if it's in args
+                        try:
+                            idx = param_names.index(arg_loc)
+                            if idx < len(args) and isinstance(args[idx], int):
+                                args[idx] = range(args[idx])
+                        except ValueError:
+                            pass
+
+            # Convert args back to tuple and call the function
+            return func(*args, **kwargs)
+
+        return _nodes_or_numbers_func
+
+    return _nodes_or_number
 
 def np_random_state(random_state_argument):
     """Decorator to generate a numpy RandomState or Generator instance.
@@ -231,7 +363,74 @@ def np_random_state(random_state_argument):
     --------
     py_random_state
     """
-    pass
+    def _random_state(func):
+        # Local import to avoid circular import
+        from networkx.utils import create_random_state
+
+        # Get the name of the random_state argument
+        if isinstance(random_state_argument, str):
+            random_state_name = random_state_argument
+        elif isinstance(random_state_argument, int):
+            # Get the name of the argument at the given index
+            sig = signature(func)
+            param_names = list(sig.parameters.keys())
+            if random_state_argument < len(param_names):
+                random_state_name = param_names[random_state_argument]
+            else:
+                # Handle variadic arguments (*args)
+                for param in sig.parameters.values():
+                    if param.kind == Parameter.VAR_POSITIONAL:
+                        random_state_name = random_state_argument
+                        break
+                else:
+                    msg = f"Argument index {random_state_argument} is out of range"
+                    raise ValueError(msg)
+        else:
+            raise ValueError("random_state_argument must be string or integer")
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get the random_state argument value
+            if isinstance(random_state_name, int):
+                # Handle variadic arguments
+                if random_state_name < len(args):
+                    random_state = args[random_state_name]
+                    args = list(args)  # Convert to list to allow modification
+                    args[random_state_name] = create_random_state(random_state)
+                    args = tuple(args)  # Convert back to tuple
+                else:
+                    raise ValueError(f"No argument at index {random_state_name}")
+            else:
+                # Handle named arguments
+                try:
+                    random_state = kwargs[random_state_name]
+                    kwargs[random_state_name] = create_random_state(random_state)
+                except KeyError:
+                    # If not in kwargs, check if it's in args
+                    sig = signature(func)
+                    param_names = list(sig.parameters.keys())
+                    try:
+                        idx = param_names.index(random_state_name)
+                        if idx < len(args):
+                            random_state = args[idx]
+                            args = list(args)
+                            args[idx] = create_random_state(random_state)
+                            args = tuple(args)
+                        else:
+                            # Use default value if available
+                            param = sig.parameters[random_state_name]
+                            if param.default is not Parameter.empty:
+                                kwargs[random_state_name] = create_random_state(param.default)
+                            else:
+                                raise ValueError(f"No value provided for {random_state_name}")
+                    except ValueError:
+                        raise ValueError(f"No argument named {random_state_name}")
+
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return _random_state
 
 def py_random_state(random_state_argument):
     """Decorator to generate a random.Random instance (or equiv).
@@ -289,7 +488,74 @@ def py_random_state(random_state_argument):
     --------
     np_random_state
     """
-    pass
+    def _random_state(func):
+        # Local import to avoid circular import
+        from networkx.utils import create_py_random_state
+
+        # Get the name of the random_state argument
+        if isinstance(random_state_argument, str):
+            random_state_name = random_state_argument
+        elif isinstance(random_state_argument, int):
+            # Get the name of the argument at the given index
+            sig = signature(func)
+            param_names = list(sig.parameters.keys())
+            if random_state_argument < len(param_names):
+                random_state_name = param_names[random_state_argument]
+            else:
+                # Handle variadic arguments (*args)
+                for param in sig.parameters.values():
+                    if param.kind == Parameter.VAR_POSITIONAL:
+                        random_state_name = random_state_argument
+                        break
+                else:
+                    msg = f"Argument index {random_state_argument} is out of range"
+                    raise ValueError(msg)
+        else:
+            raise ValueError("random_state_argument must be string or integer")
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get the random_state argument value
+            if isinstance(random_state_name, int):
+                # Handle variadic arguments
+                if random_state_name < len(args):
+                    random_state = args[random_state_name]
+                    args = list(args)  # Convert to list to allow modification
+                    args[random_state_name] = create_py_random_state(random_state)
+                    args = tuple(args)  # Convert back to tuple
+                else:
+                    raise ValueError(f"No argument at index {random_state_name}")
+            else:
+                # Handle named arguments
+                try:
+                    random_state = kwargs[random_state_name]
+                    kwargs[random_state_name] = create_py_random_state(random_state)
+                except KeyError:
+                    # If not in kwargs, check if it's in args
+                    sig = signature(func)
+                    param_names = list(sig.parameters.keys())
+                    try:
+                        idx = param_names.index(random_state_name)
+                        if idx < len(args):
+                            random_state = args[idx]
+                            args = list(args)
+                            args[idx] = create_py_random_state(random_state)
+                            args = tuple(args)
+                        else:
+                            # Use default value if available
+                            param = sig.parameters[random_state_name]
+                            if param.default is not Parameter.empty:
+                                kwargs[random_state_name] = create_py_random_state(param.default)
+                            else:
+                                raise ValueError(f"No value provided for {random_state_name}")
+                    except ValueError:
+                        raise ValueError(f"No argument named {random_state_name}")
+
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return _random_state
 
 class argmap:
     """A decorator to apply a map to arguments before calling the function
