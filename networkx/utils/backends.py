@@ -200,6 +200,129 @@ import networkx as nx
 from .decorators import argmap
 __all__ = ['_dispatchable']
 
+class _dispatchable:
+    """Allow any of the following decorator forms:
+    - @_dispatchable
+    - @_dispatchable()
+    - @_dispatchable(name="override_name")
+    - @_dispatchable(graphs="graph")
+    - @_dispatchable(edge_attrs="weight")
+    - @_dispatchable(graphs={"G": 0, "H": 1}, edge_attrs={"weight": "default"})
+
+    These class attributes are currently used to allow backends to run networkx tests.
+    For example: `PYTHONPATH=. pytest --backend graphblas --fallback-to-nx`
+    Future work: add configuration to control these.
+    """
+    _is_testing = False
+    _fallback_to_nx = os.environ.get('NETWORKX_FALLBACK_TO_NX', 'true').strip().lower() == 'true'
+
+    def __new__(cls, func=None, *, name=None, graphs='G', edge_attrs=None, node_attrs=None, preserve_edge_attrs=False, preserve_node_attrs=False, preserve_graph_attrs=False, preserve_all_attrs=False, mutates_input=False, returns_graph=False):
+        """A decorator that makes certain input graph types dispatch to ``func``'s
+        backend implementation.
+
+        Usage can be any of the following decorator forms:
+        - @_dispatchable
+        - @_dispatchable()
+        - @_dispatchable(name="override_name")
+        - @_dispatchable(graphs="graph_var_name")
+        - @_dispatchable(edge_attrs="weight")
+        - @_dispatchable(graphs={"G": 0, "H": 1}, edge_attrs={"weight": "default"})
+        with 0 and 1 giving the position in the signature function for graph objects.
+        When edge_attrs is a dict, keys are keyword names and values are defaults.
+
+        The class attributes are used to allow backends to run networkx tests.
+        For example: `PYTHONPATH=. pytest --backend graphblas --fallback-to-nx`
+        Future work: add configuration to control these.
+
+        Parameters
+        ----------
+        func : callable, optional
+            The function to be decorated. If ``func`` is not provided, returns a
+            partial object that can be used to decorate a function later. If ``func``
+            is provided, returns a new callable object that dispatches to a backend
+            algorithm based on input graph types.
+
+        name : str, optional
+            The name of the algorithm to use for dispatching. If not provided,
+            the name of ``func`` will be used. ``name`` is useful to avoid name
+            conflicts, as all dispatched algorithms live in a single namespace.
+            For example, ``tournament.is_strongly_connected`` had a name conflict
+            with the standard ``nx.is_strongly_connected``, so we used
+            ``@_dispatchable(name="tournament_is_strongly_connected")``.
+
+        graphs : str or dict or None, default "G"
+            If a string, the parameter name of the graph, which must be the first
+            argument of the wrapped function. If more than one graph is required
+            for the algorithm (or if the graph is not the first argument), provide
+            a dict of parameter name to argument position for each graph argument.
+            For example, ``@_dispatchable(graphs={"G": 0, "auxiliary?": 4})``
+            indicates the 0th parameter ``G`` of the function is a required graph,
+            and the 4th parameter ``auxiliary`` is an optional graph.
+            To indicate an argument is a list of graphs, do e.g. ``"[graphs]"``.
+            Use ``graphs=None`` if *no* arguments are NetworkX graphs such as for
+            graph generators, readers, and conversion functions.
+
+        edge_attrs : str or dict, optional
+            ``edge_attrs`` holds information about edge attribute arguments
+            and default values for those edge attributes.
+            If a string, ``edge_attrs`` holds the function argument name that
+            indicates a single edge attribute to include in the converted graph.
+            The default value for this attribute is 1. To indicate that an argument
+            is a list of attributes (all with default value 1), use e.g. ``"[attrs]"``.
+            If a dict, ``edge_attrs`` holds a dict keyed by argument names, with
+            values that are either the default value or, if a string, the argument
+            name that indicates the default value.
+
+        node_attrs : str or dict, optional
+            Like ``edge_attrs``, but for node attributes.
+
+        preserve_edge_attrs : bool or str or dict, optional
+            For bool, whether to preserve all edge attributes.
+            For str, the name of the argument that indicates whether to preserve all edge attributes.
+            For dict, a mapping of edge attribute names to their default values.
+
+        preserve_node_attrs : bool or str or dict, optional
+            Like ``preserve_edge_attrs``, but for node attributes.
+
+        preserve_graph_attrs : bool or str or dict, optional
+            Like ``preserve_edge_attrs``, but for graph attributes.
+
+        preserve_all_attrs : bool or str or dict, optional
+            Like ``preserve_edge_attrs``, but for all attributes (graph, node, and edge).
+
+        mutates_input : bool, optional
+            Whether the function modifies its input graph(s).
+
+        returns_graph : bool, optional
+            Whether the function returns a graph.
+        """
+        if func is None:
+            return partial(cls, name=name, graphs=graphs, edge_attrs=edge_attrs,
+                         node_attrs=node_attrs, preserve_edge_attrs=preserve_edge_attrs,
+                         preserve_node_attrs=preserve_node_attrs,
+                         preserve_graph_attrs=preserve_graph_attrs,
+                         preserve_all_attrs=preserve_all_attrs,
+                         mutates_input=mutates_input, returns_graph=returns_graph)
+
+        # Register the function with the dispatcher
+        if name is None:
+            name = func.__name__
+        _registered_algorithms[name] = {
+            'func': func,
+            'graphs': graphs,
+            'edge_attrs': edge_attrs,
+            'node_attrs': node_attrs,
+            'preserve_edge_attrs': preserve_edge_attrs,
+            'preserve_node_attrs': preserve_node_attrs,
+            'preserve_graph_attrs': preserve_graph_attrs,
+            'preserve_all_attrs': preserve_all_attrs,
+            'mutates_input': mutates_input,
+            'returns_graph': returns_graph,
+        }
+
+        # Return the original function
+        return func
+
 def _do_nothing():
     """This does nothing at all, yet it helps turn `_dispatchable` into functions."""
     pass
