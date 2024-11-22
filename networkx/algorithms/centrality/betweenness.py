@@ -8,6 +8,31 @@ from networkx.utils import py_random_state
 from networkx.utils.decorators import not_implemented_for
 __all__ = ['betweenness_centrality', 'edge_betweenness_centrality']
 
+def _accumulate_endpoints(betweenness, S, P, sigma, s):
+    """Accumulate betweenness for endpoints in shortest paths.
+
+    Parameters
+    ----------
+    betweenness : dict
+        Dictionary to accumulate betweenness values.
+    S : list
+        List of nodes in order of non-increasing distance from source.
+    P : dict
+        Dictionary of lists of predecessors for each node.
+    sigma : dict
+        Dictionary of path counts keyed by node.
+    s : node
+        Source node.
+    """
+    delta = {v: 0.0 for v in S}
+    while S:
+        w = S.pop()
+        coeff = (1.0 + delta[w]) / sigma[w]
+        for v in P[w]:
+            delta[v] += sigma[v] * coeff
+        if w != s:
+            betweenness[w] += delta[w]
+
 def _single_source_shortest_path_basic(G, s):
     """Compute shortest path lengths and predecessors on paths from source.
 
